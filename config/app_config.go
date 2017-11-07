@@ -8,30 +8,65 @@ import (
 	"fmt"
 	"flag"
 	"strings"
+	"sync"
 )
 
 
-type Http struct {
-	HttpEnabled bool
-	HttpPort int
+type HttpServer struct {
+
+	sync.RWMutex
+	Enabled bool
+	Port int
+	ListenAddress string
 }
 
 type Dwara_config struct {
+
+	sync.RWMutex
 	LogFolder string
+	LogFileMaxSize int
+	LogFilePrefix string
 }
 
+// TODO: We should allow users to be able to set passwords in secret -- passwords in plain text are lame
+type Postgres struct {
+
+	sync.RWMutex
+	HostAddressPort []string
+	Username string
+	Password string
+	DatabaseNames []string
+	MaxIdleConnections int
+	MaxOpenConnections int
+	ConnectionMaxLifetime int
+}
+
+// All the configuration in one place
 type DwConfig struct {
-	Http Http
-	Dwara_config Dwara_config
+
+	sync.RWMutex
+	HttpServer HttpServer
+	DwaraConfig Dwara_config
 }
 
+func (d *DwConfig)Get()( DwConfig ){
+
+	//d.RLock()
+	//defer d.RUnlock()
+
+	return *d
+}
+
+
+var Conf DwConfig
 
 // Dont need to add the .toml in the name here
 var configFile string = "dwara.toml"
 
 // With trailing slash
+// TODO: Config can come from flag from the command line
 var linuxConfigFolders []string = []string{"/etc/"}
-var windowsConfigFolders []string = []string{"\\dwara\\"}
+var windowsConfigFolders []string = []string{`dwara`}
 var ViConfig *viper.Viper
 
 
@@ -47,7 +82,7 @@ var ViConfig *viper.Viper
  */
 
 
-func GetConfig(){
+func LoadInitialConfig() {
 
 //	viper.AutomaticEnv('')
 
@@ -76,8 +111,8 @@ func GetConfig(){
 		fmt.Println("There was an error reading in configuration. Error : ", verr.Error())
 	}
 
-	// Show all configuration...
-	fmt.Println(ViConfig.AllSettings())
+	ViConfig.Unmarshal(&Conf)
+
 }
 
 func ShowConfig() {
@@ -112,7 +147,6 @@ func getConfigFile() (retFilePath string, retErrors []error) {
 
 	envConfigFile := os.Getenv("DWARA_CONFIG_FILE")
 
-
 	// If we are in windows, check the folders we generally put stuff in
 	if runtime.GOOS == "windows" {
 
@@ -130,6 +164,7 @@ func getConfigFile() (retFilePath string, retErrors []error) {
 			// Loop over all the common windows folders
 			for _, curFolder := range windowsConfigFolders {
 
+				curFolder = AddWinFolderSlashes(curFolder)
 				curFile := curDrive + ":" + curFolder + configFile
 
 				fmt.Println("Checking for ", curFile)
@@ -138,6 +173,7 @@ func getConfigFile() (retFilePath string, retErrors []error) {
 
 					// Config file found
 					retFilePath = curFile
+					fmt.Printf("Got config file : %v \n", curFile)
 					break FileChecking
 
 				}
